@@ -10,973 +10,907 @@
   <title>고도비만 택시장부</title>
   
   <link rel="manifest" href="manifest.json">
-  <link rel="icon" type="image/png" sizes="192x192" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='0.9em' font-size='90'>🚕</text></svg>">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='0.9em' font-size='90'>🚕</text></svg>">
   <link rel="apple-touch-icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='0.9em' font-size='90'>🚕</text></svg>">
   
-  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
-  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
   <script src="https://cdn.tailwindcss.com"></script>
-  <script src="https://unpkg.com/lucide@latest"></script>
   
   <style>
-    body { margin: 0; padding: 0; overflow-x: hidden; -webkit-tap-highlight-color: transparent; -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }
-    input, textarea, button { -webkit-user-select: text; user-select: text; }
+    body { 
+      margin: 0; 
+      padding: 0; 
+      overflow-x: hidden; 
+      -webkit-tap-highlight-color: transparent;
+      -webkit-touch-callout: none;
+      -webkit-user-select: none;
+      user-select: none;
+    }
+    input, textarea { 
+      -webkit-user-select: text; 
+      user-select: text; 
+    }
+    /* 모든 버튼과 버튼 내부 요소 선택 방지 */
+    button, button * {
+      -webkit-user-select: none !important;
+      user-select: none !important;
+    }
+    button div, button span {
+      pointer-events: none;
+    }
     * { -webkit-overflow-scrolling: touch; }
+    
+    /* 길게 누르기 시각적 피드백 */
+    .calendar-day-btn {
+      transition: transform 0.2s, box-shadow 0.2s;
+    }
+    .calendar-day-btn.pressing {
+      transform: scale(1.1);
+      box-shadow: 0 8px 16px rgba(0, 0, 0, 0.15) !important;
+    }
+    
+    /* 토스트 애니메이션 */
+    @keyframes slideInUp {
+      from {
+        transform: translateY(100%);
+        opacity: 0;
+      }
+      to {
+        transform: translateY(0);
+        opacity: 1;
+      }
+    }
+    @keyframes slideOutDown {
+      from {
+        transform: translateY(0);
+        opacity: 1;
+      }
+      to {
+        transform: translateY(100%);
+        opacity: 0;
+      }
+    }
+    .toast-enter {
+      animation: slideInUp 0.3s ease-out;
+    }
+    .toast-exit {
+      animation: slideOutDown 0.3s ease-in;
+    }
   </style>
 </head>
-<body>
-  <div id="root"></div>
-  
-  <script type="text/babel">
-    const { useState, useEffect } = React;
-    
-    const Plus = ({ size = 24 }) => <i data-lucide="plus" style={{ width: size, height: size }}></i>;
-    const TrendingUp = ({ size = 24 }) => <i data-lucide="trending-up" style={{ width: size, height: size }}></i>;
-    const TrendingDown = ({ size = 24 }) => <i data-lucide="trending-down" style={{ width: size, height: size }}></i>;
-    const Wallet = ({ size = 24, className = '' }) => <i data-lucide="wallet" className={className} style={{ width: size, height: size }}></i>;
-    const Trash2 = ({ size = 24 }) => <i data-lucide="trash-2" style={{ width: size, height: size }}></i>;
-    const Settings = ({ size = 24 }) => <i data-lucide="settings" style={{ width: size, height: size }}></i>;
-    const Tag = ({ size = 24, className = '' }) => <i data-lucide="tag" className={className} style={{ width: size, height: size }}></i>;
-    const Edit2 = ({ size = 24 }) => <i data-lucide="edit-2" style={{ width: size, height: size }}></i>;
-
-
-function ExpenseTracker() {
-  const [transactions, setTransactions] = useState(() => {
-    try {
-      const saved = localStorage.getItem('transactions');
-      return saved ? JSON.parse(saved) : [];
-    } catch (error) {
-      console.error('Failed to load transactions:', error);
-      return [];
-    }
-  });
-  const [showForm, setShowForm] = useState(false);
-  const [activeTab, setActiveTab] = useState('list'); // 'list' or 'calendar'
-  const [currentMonth, setCurrentMonth] = useState(new Date());
-  const [showCategoryManager, setShowCategoryManager] = useState(false);
-  const [deleteConfirm, setDeleteConfirm] = useState(null); // { type, category }
-  const [selectedDate, setSelectedDate] = useState(null); // for calendar day detail view
-  const [headerExpanded, setHeaderExpanded] = useState(false); // header toggle
-  const [editingTransaction, setEditingTransaction] = useState(null); // transaction being edited
-  const [categories, setCategories] = useState(() => {
-    try {
-      const saved = localStorage.getItem('categories');
-      return saved ? JSON.parse(saved) : {
-        income: ['카카오택시', '카드결제', '현금결제', '팁'],
-        expense: ['식비', '교통', '쇼핑', '취미', '공과금', '기타']
-      };
-    } catch (error) {
-      console.error('Failed to load categories:', error);
-      return {
-        income: ['카카오택시', '카드결제', '현금결제', '팁'],
-        expense: ['식비', '교통', '쇼핑', '취미', '공과금', '기타']
-      };
-    }
-  });
-  const [newCategory, setNewCategory] = useState('');
-  const [categoryType, setCategoryType] = useState('expense');
-  const [formData, setFormData] = useState({
-    type: 'expense',
-    amount: '',
-    category: '',
-    description: '',
-    date: new Date().toISOString().split('T')[0]
-  });
-
-  // localStorage에 transactions 저장
-  useEffect(() => {
-    try {
-      localStorage.setItem('transactions', JSON.stringify(transactions));
-    } catch (error) {
-      console.error('Failed to save transactions:', error);
-    }
-  }, [transactions]);
-
-  // localStorage에 categories 저장
-  useEffect(() => {
-    try {
-      localStorage.setItem('categories', JSON.stringify(categories));
-    } catch (error) {
-      console.error('Failed to save categories:', error);
-    }
-  }, [categories]);
-
-  // 총 수입, 지출, 잔액 계산
-  const summary = transactions.reduce((acc, transaction) => {
-    if (transaction.type === 'income') {
-      acc.income += transaction.amount;
-    } else {
-      acc.expense += transaction.amount;
-    }
-    return acc;
-  }, { income: 0, expense: 0 });
-
-  const balance = summary.income - summary.expense;
-
-  const handleSubmit = (e) => {
-    e.preventDefault();
-    
-    if (!formData.amount || !formData.category) {
-      alert('금액과 카테고리를 입력해주세요');
-      return;
-    }
-
-    if (editingTransaction) {
-      // 수정 모드
-      const updatedTransaction = {
-        ...editingTransaction,
-        ...formData,
-        amount: parseFloat(formData.amount.replace(/,/g, ''))
-      };
-      setTransactions(transactions.map(t => 
-        t.id === editingTransaction.id ? updatedTransaction : t
-      ));
-      setEditingTransaction(null);
-    } else {
-      // 새로 추가 모드
-      const newTransaction = {
-        id: Date.now(),
-        ...formData,
-        amount: parseFloat(formData.amount.replace(/,/g, ''))
-      };
-      setTransactions([newTransaction, ...transactions]);
-    }
-
-    setFormData({
-      type: 'expense',
-      amount: '',
-      category: '',
-      description: '',
-      date: new Date().toISOString().split('T')[0]
-    });
-    setShowForm(false);
-  };
-
-  const startEditTransaction = (transaction) => {
-    setEditingTransaction(transaction);
-    setFormData({
-      type: transaction.type,
-      amount: formatCurrency(transaction.amount),
-      category: transaction.category,
-      description: transaction.description || '',
-      date: transaction.date
-    });
-    setShowForm(true);
-  };
-
-  const cancelEdit = () => {
-    setEditingTransaction(null);
-    setFormData({
-      type: 'expense',
-      amount: '',
-      category: '',
-      description: '',
-      date: new Date().toISOString().split('T')[0]
-    });
-    setShowForm(false);
-  };
-
-  const handleAmountChange = (e) => {
-    const value = e.target.value.replace(/,/g, '');
-    if (value === '' || /^\d+$/.test(value)) {
-      const formatted = value === '' ? '' : parseInt(value).toLocaleString('ko-KR');
-      setFormData({ ...formData, amount: formatted });
-    }
-  };
-
-  const deleteTransaction = (id) => {
-    setTransactions(transactions.filter(t => t.id !== id));
-  };
-
-  const clearAllData = () => {
-    if (confirm('모든 데이터를 삭제하시겠습니까?')) {
-      setTransactions([]);
-      localStorage.removeItem('transactions');
-    }
-  };
-
-  const addCategory = () => {
-    if (!newCategory.trim()) {
-      alert('카테고리 이름을 입력해주세요');
-      return;
-    }
-    
-    if (categories[categoryType].includes(newCategory.trim())) {
-      alert('이미 존재하는 카테고리입니다');
-      return;
-    }
-
-    setCategories(prev => ({
-      ...prev,
-      [categoryType]: [...prev[categoryType], newCategory.trim()]
-    }));
-    setNewCategory('');
-  };
-
-  const deleteCategory = (type, categoryName) => {
-    setDeleteConfirm({ type, category: categoryName });
-  };
-
-  const confirmDelete = () => {
-    if (deleteConfirm) {
-      const { type, category } = deleteConfirm;
-      setCategories(prev => ({
-        ...prev,
-        [type]: prev[type].filter(cat => cat !== category)
-      }));
-      setDeleteConfirm(null);
-    }
-  };
-
-  const cancelDelete = () => {
-    setDeleteConfirm(null);
-  };
-
-  const formatCurrency = (amount) => {
-    return new Intl.NumberFormat('ko-KR').format(amount);
-  };
-
-  const formatDate = (dateString) => {
-    const date = new Date(dateString);
-    return `${date.getMonth() + 1}/${date.getDate()}`;
-  };
-
-  // 캘린더 관련 함수들
-  const getDaysInMonth = (date) => {
-    const year = date.getFullYear();
-    const month = date.getMonth();
-    const firstDay = new Date(year, month, 1);
-    const lastDay = new Date(year, month + 1, 0);
-    const daysInMonth = lastDay.getDate();
-    const startingDayOfWeek = firstDay.getDay();
-    
-    return { daysInMonth, startingDayOfWeek, year, month };
-  };
-
-  const getTransactionsForDate = (date) => {
-    // 로컬 날짜를 YYYY-MM-DD 형식으로 변환 (시간대 문제 방지)
-    const year = date.getFullYear();
-    const month = String(date.getMonth() + 1).padStart(2, '0');
-    const day = String(date.getDate()).padStart(2, '0');
-    const dateString = `${year}-${month}-${day}`;
-    return transactions.filter(t => t.date === dateString);
-  };
-
-  const getMonthSummary = () => {
-    const year = currentMonth.getFullYear();
-    const month = currentMonth.getMonth();
-    
-    return transactions
-      .filter(t => {
-        // YYYY-MM-DD 형식의 문자열을 파싱 (시간대 문제 방지)
-        const [tYear, tMonth] = t.date.split('-').map(Number);
-        return tYear === year && tMonth - 1 === month;
-      })
-      .reduce((acc, transaction) => {
-        if (transaction.type === 'income') {
-          acc.income += transaction.amount;
-        } else {
-          acc.expense += transaction.amount;
-        }
-        return acc;
-      }, { income: 0, expense: 0 });
-  };
-
-  const changeMonth = (direction) => {
-    setCurrentMonth(prev => {
-      const newDate = new Date(prev);
-      newDate.setMonth(prev.getMonth() + direction);
-      return newDate;
-    });
-  };
-
-  return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50 pb-20">
-      {/* 헤더 */}
-      <div className="relative overflow-hidden">
-        {/* Glassmorphism background */}
-        <div className="absolute inset-0 bg-gradient-to-br from-blue-500/90 via-indigo-500/90 to-purple-600/90 backdrop-blur-xl"></div>
-        <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top_right,_var(--tw-gradient-stops))] from-white/20 via-transparent to-transparent"></div>
-        
-        <div className="relative text-white p-4">
-          <div className="flex items-center justify-between mb-3">
-            <h1 className="text-lg font-semibold tracking-tight">🚕 고도비만 택시장부</h1>
-            <button
-              onClick={() => setShowCategoryManager(true)}
-              className="p-2 bg-white/15 backdrop-blur-2xl rounded-xl border border-white/20 hover:bg-white/25 transition-all"
-              title="카테고리 관리"
-            >
-              <Settings size={18} />
-            </button>
-          </div>
-          
-          {/* 축소된 헤더 */}
-          <button
-            onClick={() => setHeaderExpanded(!headerExpanded)}
-            className="w-full bg-white/15 backdrop-blur-2xl rounded-2xl p-3 border border-white/20 shadow-xl transition-all hover:bg-white/20"
-          >
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <Wallet size={16} className="opacity-80" />
-                <span className="text-sm font-medium">손익</span>
-              </div>
-              <div className="text-xl font-semibold">
-                {formatCurrency(balance)}원
-              </div>
-              <div className="text-white/60">
-                {headerExpanded ? '▼' : '▶'}
-              </div>
-            </div>
-          </button>
-
-          {/* 펼쳐진 상세 정보 */}
-          {headerExpanded && (
-            <div className="mt-3 space-y-2 animate-in fade-in slide-in-from-top-2 duration-200">
-              <div className="grid grid-cols-2 gap-2">
-                <div className="bg-white/10 backdrop-blur-2xl rounded-xl p-3 border border-white/20">
-                  <div className="flex items-center gap-1.5 mb-1">
-                    <TrendingUp size={14} className="opacity-80" />
-                    <span className="text-xs font-medium opacity-80">수입</span>
-                  </div>
-                  <div className="text-lg font-semibold">
-                    +{formatCurrency(summary.income)}
-                  </div>
-                </div>
-                <div className="bg-white/10 backdrop-blur-2xl rounded-xl p-3 border border-white/20">
-                  <div className="flex items-center gap-1.5 mb-1">
-                    <TrendingDown size={14} className="opacity-80" />
-                    <span className="text-xs font-medium opacity-80">지출</span>
-                  </div>
-                  <div className="text-lg font-semibold">
-                    -{formatCurrency(summary.expense)}
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* 탭 네비게이션 */}
-      <div className="px-4 pt-4 pb-2">
-        <div className="bg-white/60 backdrop-blur-xl rounded-2xl p-1.5 grid grid-cols-2 gap-1.5 border border-white/40 shadow-lg">
-          <button
-            onClick={() => setActiveTab('list')}
-            className={`py-3 px-4 rounded-xl font-medium transition-all duration-200 ${
-              activeTab === 'list'
-                ? 'bg-white text-indigo-600 shadow-md'
-                : 'text-gray-600 hover:text-gray-900'
-            }`}
-          >
-            목록
-          </button>
-          <button
-            onClick={() => setActiveTab('calendar')}
-            className={`py-3 px-4 rounded-xl font-medium transition-all duration-200 ${
-              activeTab === 'calendar'
-                ? 'bg-white text-indigo-600 shadow-md'
-                : 'text-gray-600 hover:text-gray-900'
-            }`}
-          >
-            캘린더
-          </button>
-        </div>
-      </div>
-
-      {/* 목록 뷰 */}
-      {activeTab === 'list' && (
-        <div className="p-4">
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-lg font-semibold text-gray-800">최근 내역</h2>
-            {transactions.length > 0 && (
-              <button
-                onClick={clearAllData}
-                className="text-sm text-red-500 hover:text-red-600 font-medium transition-colors"
-              >
-                전체 삭제
-              </button>
-            )}
-          </div>
-          
-          {transactions.length === 0 ? (
-            <div className="text-center py-16 text-gray-400">
-              <Wallet size={48} className="mx-auto mb-3 opacity-30" />
-              <p className="font-medium">아직 내역이 없습니다</p>
-              <p className="text-sm mt-1">+ 버튼을 눌러 추가해보세요</p>
-            </div>
-          ) : (
-            <div className="space-y-2">
-              {[...transactions]
-                .sort((a, b) => {
-                  // 날짜를 비교 (최신 날짜가 위로)
-                  if (a.date !== b.date) {
-                    return b.date.localeCompare(a.date);
-                  }
-                  // 같은 날짜면 ID로 정렬 (최근 입력이 위로)
-                  return b.id - a.id;
-                })
-                .map(transaction => (
-                <div 
-                  key={transaction.id}
-                  className="bg-white/80 backdrop-blur-xl rounded-2xl p-4 border border-white/60 shadow-lg flex items-center justify-between hover:bg-white/90 transition-all"
-                >
-                  <div className="flex items-center gap-3 flex-1">
-                    <div className={`w-12 h-12 rounded-2xl flex items-center justify-center shadow-sm ${
-                      transaction.type === 'income' 
-                        ? 'bg-gradient-to-br from-green-400 to-emerald-500 text-white' 
-                        : 'bg-gradient-to-br from-red-400 to-rose-500 text-white'
-                    }`}>
-                      {transaction.type === 'income' ? (
-                        <TrendingUp size={20} />
-                      ) : (
-                        <TrendingDown size={20} />
-                      )}
-                    </div>
-                    
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 mb-1">
-                        <span className="font-semibold text-gray-800">
-                          {transaction.category}
-                        </span>
-                        <span className="text-xs text-gray-400 font-medium">
-                          {formatDate(transaction.date)}
-                        </span>
-                      </div>
-                      {transaction.description && (
-                        <p className="text-sm text-gray-500 truncate">
-                          {transaction.description}
-                        </p>
-                      )}
-                    </div>
-                  </div>
-
-                  <div className="flex items-center gap-2">
-                    <div className={`text-lg font-semibold ${
-                      transaction.type === 'income' ? 'text-green-600' : 'text-red-600'
-                    }`}>
-                      {transaction.type === 'income' ? '+' : '-'}
-                      {formatCurrency(transaction.amount)}
-                    </div>
-                    <button
-                      onClick={() => startEditTransaction(transaction)}
-                      className="text-gray-400 hover:text-indigo-500 transition-colors p-1"
-                    >
-                      <Edit2 size={18} />
-                    </button>
-                    <button
-                      onClick={() => deleteTransaction(transaction.id)}
-                      className="text-gray-400 hover:text-red-500 transition-colors p-1"
-                    >
-                      <Trash2 size={18} />
-                    </button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* 캘린더 뷰 */}
-      {activeTab === 'calendar' && (
-        <div className="p-4">
-          {/* 월 선택 */}
-          <div className="flex items-center justify-between mb-4">
-            <button
-              onClick={() => changeMonth(-1)}
-              className="p-2.5 hover:bg-white/60 rounded-xl transition-all backdrop-blur-xl"
-            >
-              <span className="text-lg font-semibold text-gray-700">←</span>
-            </button>
-            <h2 className="text-lg font-semibold text-gray-800">
-              {currentMonth.getFullYear()}년 {currentMonth.getMonth() + 1}월
-            </h2>
-            <button
-              onClick={() => changeMonth(1)}
-              className="p-2.5 hover:bg-white/60 rounded-xl transition-all backdrop-blur-xl"
-            >
-              <span className="text-lg font-semibold text-gray-700">→</span>
-            </button>
-          </div>
-
-          {/* 월간 요약 */}
-          <div className="bg-white/80 backdrop-blur-xl rounded-2xl p-5 mb-4 border border-white/60 shadow-lg">
-            <div className="grid grid-cols-2 gap-6">
-              <div>
-                <div className="text-sm text-gray-500 mb-2 font-medium">이달 수입</div>
-                <div className="text-xl font-semibold text-green-600">
-                  +{formatCurrency(getMonthSummary().income)}
-                </div>
-              </div>
-              <div>
-                <div className="text-sm text-gray-500 mb-2 font-medium">이달 지출</div>
-                <div className="text-xl font-semibold text-red-600">
-                  -{formatCurrency(getMonthSummary().expense)}
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* 요일 헤더 */}
-          <div className="grid grid-cols-7 gap-1 mb-2">
-            {['일', '월', '화', '수', '목', '금', '토'].map((day, idx) => (
-              <div key={day} className={`text-center text-sm font-semibold py-2 ${
-                idx === 0 ? 'text-red-500' : idx === 6 ? 'text-blue-500' : 'text-gray-600'
-              }`}>
-                {day}
-              </div>
-            ))}
-          </div>
-
-          {/* 캘린더 그리드 */}
-          <div className="grid grid-cols-7 gap-1.5">
-            {(() => {
-              const { daysInMonth, startingDayOfWeek, year, month } = getDaysInMonth(currentMonth);
-              const days = [];
-              
-              // 이전 달의 빈 칸
-              for (let i = 0; i < startingDayOfWeek; i++) {
-                days.push(
-                  <div key={`empty-${i}`} className="aspect-square p-0.5">
-                    <div className="h-full bg-gray-100/50 rounded-xl"></div>
-                  </div>
-                );
-              }
-              
-              // 현재 달의 날짜들
-              for (let day = 1; day <= daysInMonth; day++) {
-                const date = new Date(year, month, day);
-                const dayTransactions = getTransactionsForDate(date);
-                const dayIncome = dayTransactions
-                  .filter(t => t.type === 'income')
-                  .reduce((sum, t) => sum + t.amount, 0);
-                const dayExpense = dayTransactions
-                  .filter(t => t.type === 'expense')
-                  .reduce((sum, t) => sum + t.amount, 0);
-                
-                const isToday = 
-                  new Date().getDate() === day &&
-                  new Date().getMonth() === month &&
-                  new Date().getFullYear() === year;
-                
-                const isSunday = date.getDay() === 0;
-                const isSaturday = date.getDay() === 6;
-                
-                days.push(
-                  <div key={day} className="aspect-square p-0.5">
-                    <button
-                      onClick={() => setSelectedDate(date)}
-                      className={`w-full h-full bg-white/70 backdrop-blur-xl rounded-xl p-1.5 flex flex-col items-center justify-between border transition-all ${
-                        isToday 
-                          ? 'ring-2 ring-indigo-500 border-indigo-200 bg-white/90' 
-                          : 'border-white/60 hover:bg-white/90'
-                      }`}
-                    >
-                      <div className={`text-xs font-semibold ${
-                        isToday 
-                          ? 'text-indigo-600' 
-                          : isSunday 
-                            ? 'text-red-500'
-                            : isSaturday
-                              ? 'text-blue-500'
-                              : 'text-gray-700'
-                      }`}>
-                        {day}
-                      </div>
-                      {dayTransactions.length > 0 && (
-                        <div className="flex gap-1 mt-auto">
-                          {dayIncome > 0 && (
-                            <div className="w-1.5 h-1.5 rounded-full bg-green-500"></div>
-                          )}
-                          {dayExpense > 0 && (
-                            <div className="w-1.5 h-1.5 rounded-full bg-red-500"></div>
-                          )}
-                        </div>
-                      )}
-                    </button>
-                  </div>
-                );
-              }
-              
-              return days;
-            })()}
-          </div>
-        </div>
-      )}
-
-      {/* 추가 버튼 */}
-      <button
-        onClick={() => setShowForm(true)}
-        className="fixed bottom-6 right-6 w-16 h-16 bg-gradient-to-br from-indigo-500 to-purple-600 text-white rounded-2xl shadow-2xl flex items-center justify-center hover:shadow-indigo-500/50 hover:scale-105 transition-all duration-200 border border-white/20"
-      >
-        <Plus size={28} strokeWidth={2.5} />
-      </button>
-
-      {/* 입력 폼 모달 */}
-      {showForm && (
-        <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-end z-50 animate-in fade-in duration-200">
-          <div className="bg-white/95 backdrop-blur-2xl w-full rounded-t-3xl p-6 max-h-[85vh] overflow-y-auto border-t border-white/60 shadow-2xl">
-            <div className="flex items-center justify-between mb-6">
-              <h2 className="text-xl font-semibold text-gray-800">
-                {editingTransaction ? '내역 수정' : '내역 추가'}
-              </h2>
-              <button
-                onClick={cancelEdit}
-                className="text-gray-400 hover:text-gray-600 transition-colors w-8 h-8 flex items-center justify-center rounded-xl hover:bg-gray-100"
-              >
-                <span className="text-2xl leading-none">×</span>
-              </button>
-            </div>
-
-            <form onSubmit={handleSubmit} className="space-y-5">
-              {/* 타입 선택 */}
-              <div className="grid grid-cols-2 gap-3">
-                <button
-                  type="button"
-                  onClick={() => setFormData({ ...formData, type: 'income', category: '' })}
-                  className={`py-3.5 rounded-2xl font-semibold transition-all duration-200 ${
-                    formData.type === 'income'
-                      ? 'bg-gradient-to-br from-green-500 to-emerald-600 text-white shadow-lg shadow-green-500/30'
-                      : 'bg-gray-100/80 text-gray-600 hover:bg-gray-200/80'
-                  }`}
-                >
-                  수입
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setFormData({ ...formData, type: 'expense', category: '' })}
-                  className={`py-3.5 rounded-2xl font-semibold transition-all duration-200 ${
-                    formData.type === 'expense'
-                      ? 'bg-gradient-to-br from-red-500 to-rose-600 text-white shadow-lg shadow-red-500/30'
-                      : 'bg-gray-100/80 text-gray-600 hover:bg-gray-200/80'
-                  }`}
-                >
-                  지출
-                </button>
-              </div>
-
-              {/* 금액 */}
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2.5">
-                  금액
-                </label>
-                <input
-                  type="text"
-                  inputMode="numeric"
-                  pattern="[0-9,]*"
-                  value={formData.amount}
-                  onChange={handleAmountChange}
-                  placeholder="금액을 입력하세요"
-                  className="w-full px-4 py-3.5 bg-white/80 border-2 border-gray-200/80 rounded-2xl focus:border-indigo-400 focus:outline-none focus:bg-white transition-all"
-                  required
-                />
-              </div>
-
-              {/* 카테고리 */}
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2.5">
-                  카테고리
-                </label>
-                <div className="grid grid-cols-3 gap-2">
-                  {categories[formData.type].map(cat => (
-                    <button
-                      key={cat}
-                      type="button"
-                      onClick={() => setFormData({ ...formData, category: cat })}
-                      className={`py-2.5 px-3 rounded-xl text-sm font-medium transition-all duration-200 ${
-                        formData.category === cat
-                          ? 'bg-gradient-to-br from-indigo-500 to-purple-600 text-white shadow-md shadow-indigo-500/30'
-                          : 'bg-gray-100/80 text-gray-600 hover:bg-gray-200/80'
-                      }`}
-                    >
-                      {cat}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* 날짜 */}
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2.5">
-                  날짜
-                </label>
-                <input
-                  type="date"
-                  value={formData.date}
-                  onChange={(e) => setFormData({ ...formData, date: e.target.value })}
-                  className="w-full px-4 py-3.5 bg-white/80 border-2 border-gray-200/80 rounded-2xl focus:border-indigo-400 focus:outline-none focus:bg-white transition-all appearance-none"
-                  style={{ WebkitAppearance: 'none', MozAppearance: 'none' }}
-                  required
-                />
-              </div>
-
-              {/* 메모 */}
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2.5">
-                  메모 (선택)
-                </label>
-                <input
-                  type="text"
-                  value={formData.description}
-                  onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                  placeholder="간단한 메모를 입력하세요"
-                  className="w-full px-4 py-3.5 bg-white/80 border-2 border-gray-200/80 rounded-2xl focus:border-indigo-400 focus:outline-none focus:bg-white transition-all"
-                />
-              </div>
-
-              {/* 제출 버튼 */}
-              <button
-                type="submit"
-                className="w-full py-4 bg-gradient-to-br from-indigo-500 to-purple-600 text-white font-semibold rounded-2xl shadow-lg shadow-indigo-500/40 hover:shadow-xl hover:scale-[1.02] transition-all duration-200"
-              >
-                {editingTransaction ? '수정하기' : '추가하기'}
-              </button>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* 카테고리 관리 모달 */}
-      {showCategoryManager && (
-        <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-end z-50 animate-in fade-in duration-200">
-          <div className="bg-white/95 backdrop-blur-2xl w-full rounded-t-3xl p-6 max-h-[85vh] overflow-y-auto border-t border-white/60 shadow-2xl">
-            <div className="flex items-center justify-between mb-6">
-              <h2 className="text-xl font-semibold text-gray-800">카테고리 관리</h2>
-              <button
-                onClick={() => setShowCategoryManager(false)}
-                className="text-gray-400 hover:text-gray-600 transition-colors w-8 h-8 flex items-center justify-center rounded-xl hover:bg-gray-100"
-              >
-                <span className="text-2xl leading-none">×</span>
-              </button>
-            </div>
-
-            {/* 타입 선택 */}
-            <div className="grid grid-cols-2 gap-3 mb-6">
-              <button
-                type="button"
-                onClick={() => setCategoryType('income')}
-                className={`py-3.5 rounded-2xl font-semibold transition-all duration-200 ${
-                  categoryType === 'income'
-                    ? 'bg-gradient-to-br from-green-500 to-emerald-600 text-white shadow-lg shadow-green-500/30'
-                    : 'bg-gray-100/80 text-gray-600 hover:bg-gray-200/80'
-                }`}
-              >
-                수입 카테고리
-              </button>
-              <button
-                type="button"
-                onClick={() => setCategoryType('expense')}
-                className={`py-3.5 rounded-2xl font-semibold transition-all duration-200 ${
-                  categoryType === 'expense'
-                    ? 'bg-gradient-to-br from-red-500 to-rose-600 text-white shadow-lg shadow-red-500/30'
-                    : 'bg-gray-100/80 text-gray-600 hover:bg-gray-200/80'
-                }`}
-              >
-                지출 카테고리
-              </button>
-            </div>
-
-            {/* 카테고리 추가 */}
-            <div className="mb-6">
-              <label className="block text-sm font-semibold text-gray-700 mb-2.5">
-                새 카테고리 추가
-              </label>
-              <div className="flex gap-2">
-                <input
-                  type="text"
-                  value={newCategory}
-                  onChange={(e) => setNewCategory(e.target.value)}
-                  onKeyPress={(e) => e.key === 'Enter' && addCategory()}
-                  placeholder="카테고리 이름 입력"
-                  className="flex-1 px-4 py-3 bg-white/80 border-2 border-gray-200/80 rounded-2xl focus:border-indigo-400 focus:outline-none focus:bg-white transition-all"
-                />
-                <button
-                  onClick={addCategory}
-                  className="px-6 py-3 bg-gradient-to-br from-indigo-500 to-purple-600 text-white font-semibold rounded-2xl shadow-lg shadow-indigo-500/40 hover:shadow-xl hover:scale-[1.02] transition-all duration-200"
-                >
-                  추가
-                </button>
-              </div>
-            </div>
-
-            {/* 카테고리 목록 */}
-            <div>
-              <h3 className="text-sm font-semibold text-gray-700 mb-3">
-                {categoryType === 'income' ? '수입' : '지출'} 카테고리
-              </h3>
-              <div className="space-y-2">
-                {categories[categoryType].map((cat, index) => (
-                  <div
-                    key={index}
-                    className="bg-white/80 backdrop-blur-xl rounded-2xl p-4 border border-white/60 shadow-lg flex items-center justify-between hover:bg-white/90 transition-all"
-                  >
-                    <span className="font-medium text-gray-800">{cat}</span>
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        deleteCategory(categoryType, cat);
-                      }}
-                      className="text-gray-400 hover:text-red-500 transition-colors p-1"
-                    >
-                      <Trash2 size={18} />
-                    </button>
-                  </div>
-                ))}
-                {categories[categoryType].length === 0 && (
-                  <div className="text-center py-8 text-gray-400">
-                    <Tag size={40} className="mx-auto mb-2 opacity-30" />
-                    <p className="text-sm">카테고리가 없습니다</p>
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* 삭제 확인 다이얼로그 */}
-      {deleteConfirm && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-[100] p-4">
-          <div className="bg-white/95 backdrop-blur-2xl rounded-3xl p-6 max-w-sm w-full border border-white/60 shadow-2xl">
-            <h3 className="text-lg font-semibold text-gray-800 mb-3">카테고리 삭제</h3>
-            <p className="text-gray-600 mb-6">
-              '<span className="font-semibold text-gray-800">{deleteConfirm.category}</span>' 카테고리를 삭제하시겠습니까?
-            </p>
-            <div className="grid grid-cols-2 gap-3">
-              <button
-                onClick={cancelDelete}
-                className="py-3 px-4 bg-gray-100/80 text-gray-700 font-semibold rounded-2xl hover:bg-gray-200/80 transition-all"
-              >
-                취소
-              </button>
-              <button
-                onClick={confirmDelete}
-                className="py-3 px-4 bg-gradient-to-br from-red-500 to-rose-600 text-white font-semibold rounded-2xl shadow-lg shadow-red-500/30 hover:shadow-xl hover:scale-[1.02] transition-all duration-200"
-              >
-                삭제
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* 날짜 상세 모달 */}
-      {selectedDate && (
-        <div 
-          className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-end z-[90] p-4"
-          onClick={() => setSelectedDate(null)}
-        >
-          <div 
-            className="bg-white/95 backdrop-blur-2xl rounded-3xl p-6 max-w-sm w-full mx-auto border border-white/60 shadow-2xl max-h-[70vh] overflow-y-auto"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-semibold text-gray-800">
-                {selectedDate.getMonth() + 1}월 {selectedDate.getDate()}일
-              </h3>
-              <button
-                onClick={() => setSelectedDate(null)}
-                className="text-gray-400 hover:text-gray-600 transition-colors w-8 h-8 flex items-center justify-center rounded-xl hover:bg-gray-100"
-              >
-                <span className="text-2xl leading-none">×</span>
-              </button>
-            </div>
-            
-            {(() => {
-              const dayTransactions = getTransactionsForDate(selectedDate);
-              const dayIncome = dayTransactions
-                .filter(t => t.type === 'income')
-                .reduce((sum, t) => sum + t.amount, 0);
-              const dayExpense = dayTransactions
-                .filter(t => t.type === 'expense')
-                .reduce((sum, t) => sum + t.amount, 0);
-              
-              return (
-                <>
-                  <div className="grid grid-cols-2 gap-3 mb-4">
-                    <div className="bg-green-50 rounded-xl p-3">
-                      <div className="text-xs text-green-600 mb-1">수입</div>
-                      <div className="text-lg font-semibold text-green-600">
-                        +{formatCurrency(dayIncome)}
-                      </div>
-                    </div>
-                    <div className="bg-red-50 rounded-xl p-3">
-                      <div className="text-xs text-red-600 mb-1">지출</div>
-                      <div className="text-lg font-semibold text-red-600">
-                        -{formatCurrency(dayExpense)}
-                      </div>
-                    </div>
-                  </div>
-                  
-                  {dayTransactions.length > 0 ? (
-                    <div className="space-y-2">
-                      {[...dayTransactions]
-                        .sort((a, b) => b.id - a.id)
-                        .map(transaction => (
-                        <div 
-                          key={transaction.id}
-                          className="bg-gray-50 rounded-xl p-3 flex items-center justify-between"
-                        >
-                          <div className="flex items-center gap-3 flex-1">
-                            <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${
-                              transaction.type === 'income' 
-                                ? 'bg-green-100 text-green-600' 
-                                : 'bg-red-100 text-red-600'
-                            }`}>
-                              {transaction.type === 'income' ? (
-                                <TrendingUp size={16} />
-                              ) : (
-                                <TrendingDown size={16} />
-                              )}
-                            </div>
-                            <div className="flex-1 min-w-0">
-                              <div className="font-medium text-gray-800 text-sm">
-                                {transaction.category}
-                              </div>
-                              {transaction.description && (
-                                <p className="text-xs text-gray-500 truncate">
-                                  {transaction.description}
-                                </p>
-                              )}
-                            </div>
-                          </div>
-                          <div className={`font-semibold text-sm ${
-                            transaction.type === 'income' ? 'text-green-600' : 'text-red-600'
-                          }`}>
-                            {transaction.type === 'income' ? '+' : '-'}
-                            {formatCurrency(transaction.amount)}
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <div className="text-center py-8 text-gray-400">
-                      <p className="text-sm">이 날짜에 내역이 없습니다</p>
-                    </div>
-                  )}
-                </>
-              );
-            })()}
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
-    useEffect(() => { lucide.createIcons(); });
-    ReactDOM.render(<ExpenseTracker />, document.getElementById('root'));
-  </script>
+<body class="bg-gray-50">
+  <div id="app"></div>
   
   <script>
-    if ('serviceWorker' in navigator) {
-      window.addEventListener('load', () => {
-        navigator.serviceWorker.register('sw.js').then(reg => console.log('SW registered')).catch(err => console.log('SW failed'));
-      });
-    }
+    const App = {
+      state: {
+        transactions: [],
+        categories: {
+          income: ['카카오택시', '카드결제', '현금결제', '팁'],
+          expense: ['식비', '교통', '쇼핑', '취미', '공과금', '기타']
+        },
+        showForm: false,
+        currentMonth: new Date(),
+        showCategoryManager: false,
+        selectedDate: null,
+        headerExpanded: false,
+        editingTransaction: null,
+        newCategory: '',
+        categoryType: 'expense',
+        monthlyGoal: 0,
+        showGoalInput: false,
+        goalInputValue: '',
+        daysOff: [],
+        toastMessage: '',
+        formData: {
+          type: 'expense',
+          amount: '',
+          category: '',
+          description: '',
+          date: ''
+        }
+      },
+      
+      init() {
+        this.loadData();
+        this.render();
+        this.registerServiceWorker();
+      },
+      
+      getLocalDateString() {
+        const today = new Date();
+        const year = today.getFullYear();
+        const month = String(today.getMonth() + 1).padStart(2, '0');
+        const day = String(today.getDate()).padStart(2, '0');
+        return `${year}-${month}-${day}`;
+      },
+      
+      loadData() {
+        try {
+          const saved = localStorage.getItem('transactions');
+          if (saved) this.state.transactions = JSON.parse(saved);
+        } catch (e) {
+          console.error('Failed to load transactions:', e);
+        }
+        
+        try {
+          const savedCat = localStorage.getItem('categories');
+          if (savedCat) this.state.categories = JSON.parse(savedCat);
+        } catch (e) {
+          console.error('Failed to load categories:', e);
+        }
+        
+        try {
+          const savedGoal = localStorage.getItem('monthlyGoal');
+          if (savedGoal) this.state.monthlyGoal = parseInt(savedGoal);
+        } catch (e) {
+          console.error('Failed to load monthly goal:', e);
+        }
+        
+        try {
+          const savedDaysOff = localStorage.getItem('daysOff');
+          if (savedDaysOff) this.state.daysOff = JSON.parse(savedDaysOff);
+        } catch (e) {
+          console.error('Failed to load days off:', e);
+        }
+      },
+      
+      saveData() {
+        try {
+          localStorage.setItem('transactions', JSON.stringify(this.state.transactions));
+          localStorage.setItem('categories', JSON.stringify(this.state.categories));
+          localStorage.setItem('monthlyGoal', this.state.monthlyGoal.toString());
+          localStorage.setItem('daysOff', JSON.stringify(this.state.daysOff));
+        } catch (e) {
+          console.error('Failed to save data:', e);
+        }
+      },
+      
+      getSummary() {
+        return this.state.transactions.reduce((acc, t) => {
+          if (t.type === 'income') acc.income += t.amount;
+          else acc.expense += t.amount;
+          return acc;
+        }, { income: 0, expense: 0 });
+      },
+      
+      formatCurrency(amount) {
+        return new Intl.NumberFormat('ko-KR').format(amount);
+      },
+      
+      formatDate(dateString) {
+        const date = new Date(dateString + 'T00:00:00');
+        return `${date.getMonth() + 1}/${date.getDate()}`;
+      },
+      
+      handleAmountChange(value) {
+        const cleaned = value.replace(/,/g, '');
+        if (cleaned === '' || /^\d+$/.test(cleaned)) {
+          const formatted = cleaned === '' ? '' : parseInt(cleaned).toLocaleString('ko-KR');
+          this.state.formData.amount = formatted;
+          const input = document.querySelector('input[inputmode="numeric"]');
+          if (input && document.activeElement === input) {
+            input.value = formatted;
+          } else {
+            this.render();
+          }
+        }
+      },
+      
+      handleSubmit(e) {
+        e.preventDefault();
+        
+        if (!this.state.formData.amount || !this.state.formData.category) {
+          alert('금액과 카테고리를 입력해주세요');
+          return;
+        }
+        
+        if (this.state.editingTransaction) {
+          const updated = {
+            ...this.state.editingTransaction,
+            ...this.state.formData,
+            amount: parseFloat(this.state.formData.amount.replace(/,/g, ''))
+          };
+          this.state.transactions = this.state.transactions.map(t => 
+            t.id === this.state.editingTransaction.id ? updated : t
+          );
+          this.state.editingTransaction = null;
+        } else {
+          const newTx = {
+            id: Date.now(),
+            ...this.state.formData,
+            amount: parseFloat(this.state.formData.amount.replace(/,/g, ''))
+          };
+          this.state.transactions = [newTx, ...this.state.transactions];
+        }
+        
+        this.state.formData = {
+          type: 'expense',
+          amount: '',
+          category: '',
+          description: '',
+          date: this.getLocalDateString()
+        };
+        this.state.showForm = false;
+        this.saveData();
+        this.render();
+      },
+      
+      startEdit(transaction) {
+        this.state.editingTransaction = transaction;
+        this.state.formData = {
+          type: transaction.type,
+          amount: this.formatCurrency(transaction.amount),
+          category: transaction.category,
+          description: transaction.description || '',
+          date: transaction.date
+        };
+        this.state.showForm = true;
+        this.state.selectedDate = null;
+        this.render();
+      },
+      
+      deleteTransaction(id) {
+        if (confirm('이 내역을 삭제하시겠습니까?')) {
+          this.state.transactions = this.state.transactions.filter(t => t.id !== id);
+          this.saveData();
+          this.render();
+        }
+      },
+      
+      addCategory() {
+        if (!this.state.newCategory.trim()) {
+          alert('카테고리 이름을 입력해주세요');
+          return;
+        }
+        
+        const type = this.state.categoryType;
+        if (this.state.categories[type].includes(this.state.newCategory)) {
+          alert('이미 존재하는 카테고리입니다');
+          return;
+        }
+        
+        this.state.categories[type].push(this.state.newCategory);
+        this.state.newCategory = '';
+        this.saveData();
+        this.render();
+      },
+      
+      deleteCategory(type, category) {
+        this.state.categories[type] = this.state.categories[type].filter(c => c !== category);
+        this.saveData();
+        this.render();
+      },
+      
+      setMonthlyGoal() {
+        this.state.goalInputValue = this.state.monthlyGoal > 0 ? this.formatCurrency(this.state.monthlyGoal) : '';
+        this.state.showGoalInput = true;
+        this.render();
+      },
+      
+      handleGoalInput(value) {
+        const cleaned = value.replace(/,/g, '');
+        if (cleaned === '' || /^\d+$/.test(cleaned)) {
+          const formatted = cleaned === '' ? '' : parseInt(cleaned).toLocaleString('ko-KR');
+          this.state.goalInputValue = formatted;
+          const input = document.querySelector('#goalInput');
+          if (input && document.activeElement === input) {
+            input.value = formatted;
+          }
+        }
+      },
+      
+      saveMonthlyGoal() {
+        const goal = parseInt(this.state.goalInputValue.replace(/,/g, '') || '0');
+        this.state.monthlyGoal = goal;
+        this.state.showGoalInput = false;
+        this.state.goalInputValue = '';
+        this.saveData();
+        this.render();
+      },
+      
+      cancelGoalInput() {
+        this.state.showGoalInput = false;
+        this.state.goalInputValue = '';
+        this.render();
+      },
+      
+      toggleDayOff(dateString) {
+        // 햅틱 피드백 시도
+        if (navigator.vibrate) {
+          navigator.vibrate(50);
+        }
+        
+        try {
+          const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+          const oscillator = audioContext.createOscillator();
+          const gainNode = audioContext.createGain();
+          
+          oscillator.connect(gainNode);
+          gainNode.connect(audioContext.destination);
+          
+          gainNode.gain.setValueAtTime(0, audioContext.currentTime);
+          oscillator.frequency.setValueAtTime(0, audioContext.currentTime);
+          oscillator.start(audioContext.currentTime);
+          oscillator.stop(audioContext.currentTime + 0.05);
+        } catch (e) {}
+        
+        const index = this.state.daysOff.indexOf(dateString);
+        if (index > -1) {
+          this.state.daysOff.splice(index, 1);
+          this.showToast('💼 근무일로 변경되었습니다');
+        } else {
+          this.state.daysOff.push(dateString);
+          this.showToast('💤 휴무일로 지정되었습니다');
+        }
+        this.saveData();
+        this.render();
+      },
+      
+      showToast(message) {
+        this.state.toastMessage = message;
+        this.render();
+        setTimeout(() => {
+          this.state.toastMessage = '';
+          this.render();
+        }, 2000);
+      },
+      
+      isDayOff(date) {
+        const year = date.getFullYear();
+        const month = String(date.getMonth() + 1).padStart(2, '0');
+        const day = String(date.getDate()).padStart(2, '0');
+        const dateString = `${year}-${month}-${day}`;
+        return this.state.daysOff.includes(dateString);
+      },
+      
+      getTransactionsForDate(date) {
+        const year = date.getFullYear();
+        const month = String(date.getMonth() + 1).padStart(2, '0');
+        const day = String(date.getDate()).padStart(2, '0');
+        const dateString = `${year}-${month}-${day}`;
+        return this.state.transactions.filter(t => t.date === dateString);
+      },
+      
+      getMonthSummary() {
+        const year = this.state.currentMonth.getFullYear();
+        const month = this.state.currentMonth.getMonth();
+        
+        return this.state.transactions
+          .filter(t => {
+            const [tYear, tMonth] = t.date.split('-').map(Number);
+            return tYear === year && tMonth - 1 === month;
+          })
+          .reduce((acc, t) => {
+            if (t.type === 'income') acc.income += t.amount;
+            else acc.expense += t.amount;
+            return acc;
+          }, { income: 0, expense: 0 });
+      },
+      
+      getWorkingDaysInfo() {
+        const year = this.state.currentMonth.getFullYear();
+        const month = this.state.currentMonth.getMonth();
+        const today = new Date();
+        const isCurrentMonth = today.getFullYear() === year && today.getMonth() === month;
+        
+        // 이달 총 일수
+        const totalDaysInMonth = new Date(year, month + 1, 0).getDate();
+        
+        // 이달 휴무일 수
+        const daysOffThisMonth = this.state.daysOff.filter(dateString => {
+          const [y, m] = dateString.split('-').map(Number);
+          return y === year && m - 1 === month;
+        }).length;
+        
+        // 이달 총 근무일 (총 일수 - 휴무일)
+        const totalWorkingDays = totalDaysInMonth - daysOffThisMonth;
+        
+        // 남은 근무일 (현재 월인 경우만)
+        let remainingWorkingDays = 0;
+        if (isCurrentMonth) {
+          const currentDay = today.getDate();
+          const remainingDaysOffCount = this.state.daysOff.filter(dateString => {
+            const [y, m, d] = dateString.split('-').map(Number);
+            return y === year && m - 1 === month && d > currentDay;
+          }).length;
+          
+          remainingWorkingDays = (totalDaysInMonth - currentDay) - remainingDaysOffCount;
+        }
+        
+        return {
+          totalDaysInMonth,
+          daysOffThisMonth,
+          totalWorkingDays,
+          remainingWorkingDays,
+          isCurrentMonth
+        };
+      },
+      
+      changeMonth(direction) {
+        const newMonth = new Date(this.state.currentMonth);
+        newMonth.setMonth(newMonth.getMonth() + direction);
+        this.state.currentMonth = newMonth;
+        this.render();
+      },
+      
+      getDaysInMonth(date) {
+        const year = date.getFullYear();
+        const month = date.getMonth();
+        const firstDay = new Date(year, month, 1);
+        const lastDay = new Date(year, month + 1, 0);
+        const daysInMonth = lastDay.getDate();
+        const startingDayOfWeek = firstDay.getDay();
+        return { daysInMonth, startingDayOfWeek, year, month };
+      },
+      
+      registerServiceWorker() {
+        if ('serviceWorker' in navigator) {
+          window.addEventListener('load', () => {
+            navigator.serviceWorker.register('sw.js')
+              .then(reg => console.log('SW registered'))
+              .catch(err => console.log('SW failed'));
+          });
+        }
+      },
+      
+      render() {
+        const app = document.getElementById('app');
+        app.innerHTML = this.template();
+      },
+      
+      template() {
+        const summary = this.getSummary();
+        const balance = summary.income - summary.expense;
+        
+        return `
+          <div class="min-h-screen bg-gray-50">
+            ${this.headerTemplate(summary, balance)}
+            ${this.calendarTemplate()}
+            ${this.fabTemplate()}
+            ${this.state.showForm ? this.formTemplate() : ''}
+            ${this.state.showCategoryManager ? this.categoryManagerTemplate() : ''}
+            ${this.state.selectedDate ? this.dateDetailTemplate() : ''}
+            ${this.state.showGoalInput ? this.goalInputTemplate() : ''}
+            ${this.state.toastMessage ? this.toastTemplate() : ''}
+          </div>
+        `;
+      },
+      
+      headerTemplate(summary, balance) {
+        return `
+          <div class="relative overflow-hidden">
+            <div class="absolute inset-0 bg-gradient-to-br from-blue-500/90 via-indigo-500/90 to-purple-600/90 backdrop-blur-xl"></div>
+            <div class="absolute inset-0 bg-[radial-gradient(ellipse_at_top_right,_var(--tw-gradient-stops))] from-white/20 via-transparent to-transparent"></div>
+            
+            <div class="relative text-white p-4">
+              <div class="flex items-center justify-between mb-3">
+                <h1 class="text-lg font-semibold tracking-tight">🚕 고도비만 택시장부</h1>
+                <button onclick="App.state.showCategoryManager = true; App.render();" class="p-2 bg-white/15 backdrop-blur-2xl rounded-xl border border-white/20 hover:bg-white/25 transition-all">
+                  ⚙️
+                </button>
+              </div>
+              
+              <button onclick="App.state.headerExpanded = !App.state.headerExpanded; App.render();" class="w-full bg-white/15 backdrop-blur-2xl rounded-2xl p-3 border border-white/20 shadow-xl transition-all hover:bg-white/20">
+                <div class="flex items-center justify-between">
+                  <div class="flex items-center gap-2">
+                    <span class="text-sm font-medium">💰 손익</span>
+                  </div>
+                  <div class="text-xl font-semibold">
+                    ${this.formatCurrency(balance)}원
+                  </div>
+                  <div class="text-white/60">
+                    ${this.state.headerExpanded ? '▼' : '▶'}
+                  </div>
+                </div>
+              </button>
+              
+              ${this.state.headerExpanded ? `
+                <div class="mt-3 space-y-2 animate-in fade-in">
+                  <div class="grid grid-cols-2 gap-2">
+                    <div class="bg-white/10 backdrop-blur-2xl rounded-xl p-3 border border-white/20">
+                      <div class="flex items-center gap-1.5 mb-1">
+                        <span class="text-xs font-medium opacity-80">📈 수입</span>
+                      </div>
+                      <div class="text-lg font-semibold">
+                        +${this.formatCurrency(summary.income)}
+                      </div>
+                    </div>
+                    <div class="bg-white/10 backdrop-blur-2xl rounded-xl p-3 border border-white/20">
+                      <div class="flex items-center gap-1.5 mb-1">
+                        <span class="text-xs font-medium opacity-80">📉 지출</span>
+                      </div>
+                      <div class="text-lg font-semibold">
+                        -${this.formatCurrency(summary.expense)}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ` : ''}
+            </div>
+          </div>
+        `;
+      },
+      
+      calendarTemplate() {
+        const { daysInMonth, startingDayOfWeek, year, month } = this.getDaysInMonth(this.state.currentMonth);
+        const monthSummary = this.getMonthSummary();
+        const workingDaysInfo = this.getWorkingDaysInfo();
+        const today = new Date();
+        
+        let days = [];
+        
+        for (let i = 0; i < startingDayOfWeek; i++) {
+          days.push('<div class="aspect-square p-0.5"><div class="h-full bg-gray-100/50 rounded-xl"></div></div>');
+        }
+        
+        for (let day = 1; day <= daysInMonth; day++) {
+          const date = new Date(year, month, day);
+          const dayTx = this.getTransactionsForDate(date);
+          const dayIncome = dayTx.filter(t => t.type === 'income').reduce((sum, t) => sum + t.amount, 0);
+          const dayExpense = dayTx.filter(t => t.type === 'expense').reduce((sum, t) => sum + t.amount, 0);
+          
+          const isToday = today.getDate() === day && today.getMonth() === month && today.getFullYear() === year;
+          const isSunday = date.getDay() === 0;
+          const isSaturday = date.getDay() === 6;
+          const isDayOff = this.isDayOff(date);
+          
+          // 로컬 날짜 문자열 생성 (UTC 변환 방지)
+          const dateYear = date.getFullYear();
+          const dateMonth = String(date.getMonth() + 1).padStart(2, '0');
+          const dateDay = String(date.getDate()).padStart(2, '0');
+          const dateString = `${dateYear}-${dateMonth}-${dateDay}`;
+          
+          days.push(`
+            <div class="aspect-square p-0.5">
+              <button 
+                onclick="if(!this.longPressed) { App.state.selectedDate = new Date(${year}, ${month}, ${day}); App.render(); } this.longPressed = false;" 
+                oncontextmenu="event.preventDefault(); App.toggleDayOff('${dateString}'); return false;"
+                ontouchstart="
+                  this.longPressed = false;
+                  this.classList.add('pressing');
+                  this.touchTimer = setTimeout(() => { 
+                    this.longPressed = true;
+                    if(navigator.vibrate) navigator.vibrate(50);
+                    App.toggleDayOff('${dateString}'); 
+                  }, 500);
+                "
+                ontouchend="
+                  this.classList.remove('pressing');
+                  clearTimeout(this.touchTimer);
+                  setTimeout(() => { this.longPressed = false; }, 100);
+                "
+                ontouchmove="
+                  this.classList.remove('pressing');
+                  clearTimeout(this.touchTimer);
+                "
+                class="calendar-day-btn w-full h-full ${isDayOff ? 'bg-gray-300/50' : 'bg-white/70'} backdrop-blur-xl rounded-xl p-1.5 flex flex-col items-center justify-between border transition-all ${isToday ? 'ring-2 ring-indigo-500 border-indigo-200 bg-white/90' : 'border-white/60 hover:bg-white/90'}"
+                style="-webkit-touch-callout: none; -webkit-user-select: none;"
+              >
+                <div class="text-xs font-semibold ${isToday ? 'text-indigo-600' : isSunday ? 'text-red-500' : isSaturday ? 'text-blue-500' : 'text-gray-700'}">
+                  ${day}
+                </div>
+                ${isDayOff ? `
+                  <div class="text-lg">💤</div>
+                ` : dayTx.length > 0 ? `
+                  <div class="flex gap-1 mt-auto">
+                    ${dayIncome > 0 ? '<div class="w-1.5 h-1.5 rounded-full bg-green-500"></div>' : ''}
+                    ${dayExpense > 0 ? '<div class="w-1.5 h-1.5 rounded-full bg-red-500"></div>' : ''}
+                  </div>
+                ` : ''}
+              </button>
+            </div>
+          `);
+        }
+        
+        return `
+          <div class="p-4">
+            <div class="flex items-center justify-between mb-4">
+              <button onclick="App.changeMonth(-1)" class="p-2 bg-white/80 rounded-xl hover:bg-white shadow-sm">◀</button>
+              <h2 class="text-lg font-semibold text-gray-800">
+                ${year}년 ${month + 1}월
+              </h2>
+              <button onclick="App.changeMonth(1)" class="p-2 bg-white/80 rounded-xl hover:bg-white shadow-sm">▶</button>
+            </div>
+            
+            <div class="bg-white/80 backdrop-blur-xl rounded-2xl p-4 mb-4 border border-white/60 shadow-lg">
+              <div class="grid grid-cols-2 gap-3 mb-3">
+                <div class="bg-green-50 rounded-xl p-3">
+                  <div class="text-sm text-gray-500 mb-2 font-medium">이달 수입</div>
+                  <div class="text-xl font-semibold text-green-600">
+                    +${this.formatCurrency(monthSummary.income)}
+                  </div>
+                </div>
+                <div class="bg-red-50 rounded-xl p-3">
+                  <div class="text-sm text-gray-500 mb-2 font-medium">이달 지출</div>
+                  <div class="text-xl font-semibold text-red-600">
+                    -${this.formatCurrency(monthSummary.expense)}
+                  </div>
+                </div>
+              </div>
+              
+              ${this.state.monthlyGoal > 0 ? `
+                <div class="border-t border-gray-200 pt-3">
+                  <div class="flex items-center justify-between mb-2">
+                    <span class="text-sm font-medium text-gray-600">🎯 이달 목표</span>
+                    <button onclick="App.setMonthlyGoal()" class="text-xs text-indigo-500 hover:text-indigo-600">수정</button>
+                  </div>
+                  <div class="flex items-center justify-between mb-2">
+                    <span class="text-lg font-semibold text-gray-800">${this.formatCurrency(this.state.monthlyGoal)}원</span>
+                    <span class="text-sm ${monthSummary.income >= this.state.monthlyGoal ? 'text-green-600' : 'text-orange-600'} font-semibold">
+                      ${Math.round((monthSummary.income / this.state.monthlyGoal) * 100)}%
+                    </span>
+                  </div>
+                  <div class="w-full bg-gray-200 rounded-full h-2.5 mb-3">
+                    <div class="h-2.5 rounded-full transition-all ${monthSummary.income >= this.state.monthlyGoal ? 'bg-green-500' : 'bg-indigo-500'}" style="width: ${Math.min((monthSummary.income / this.state.monthlyGoal) * 100, 100)}%"></div>
+                  </div>
+                  
+                  ${workingDaysInfo.isCurrentMonth && monthSummary.income < this.state.monthlyGoal ? `
+                    <div class="bg-gradient-to-r from-indigo-50 to-purple-50 rounded-xl p-3 mb-2">
+                      <div class="flex items-center justify-between mb-1.5">
+                        <span class="text-xs text-gray-600 font-medium">💼 근무일 기준 하루 목표</span>
+                        <span class="text-xs text-gray-500">${workingDaysInfo.totalWorkingDays}일 중 ${workingDaysInfo.totalWorkingDays - workingDaysInfo.remainingWorkingDays}일 근무</span>
+                      </div>
+                      ${workingDaysInfo.remainingWorkingDays > 0 ? `
+                        <div class="text-xl font-bold text-indigo-600">
+                          ${this.formatCurrency(Math.ceil((this.state.monthlyGoal - monthSummary.income) / workingDaysInfo.remainingWorkingDays))}원
+                        </div>
+                        <div class="text-xs text-gray-500 mt-1">
+                          남은 ${workingDaysInfo.remainingWorkingDays}일 근무일 기준
+                        </div>
+                      ` : `
+                        <div class="text-sm text-orange-600 font-medium">
+                          이번 달 근무일이 모두 지났습니다
+                        </div>
+                      `}
+                    </div>
+                  ` : ''}
+                  
+                  <div class="text-xs text-gray-500 text-right">
+                    ${monthSummary.income >= this.state.monthlyGoal ? '목표 달성! 🎉' : `${this.formatCurrency(this.state.monthlyGoal - monthSummary.income)}원 남음`}
+                  </div>
+                </div>
+              ` : `
+                <div class="border-t border-gray-200 pt-3">
+                  <button onclick="App.setMonthlyGoal()" class="w-full py-2.5 bg-indigo-50 text-indigo-600 rounded-xl hover:bg-indigo-100 transition-all font-medium text-sm">
+                    🎯 이달 목표 설정하기
+                  </button>
+                </div>
+              `}
+            </div>
+            
+            <div class="grid grid-cols-7 gap-1 mb-2">
+              ${['일', '월', '화', '수', '목', '금', '토'].map((d, i) => `
+                <div class="text-center text-sm font-semibold py-2 ${i === 0 ? 'text-red-500' : i === 6 ? 'text-blue-500' : 'text-gray-600'}">
+                  ${d}
+                </div>
+              `).join('')}
+            </div>
+            
+            <div class="grid grid-cols-7 gap-1.5">
+              ${days.join('')}
+            </div>
+          </div>
+        `;
+      },
+      
+      fabTemplate() {
+        return `
+          <button onclick="App.state.showForm = true; App.state.editingTransaction = null; App.state.formData = { type: 'expense', amount: '', category: '', description: '', date: App.getLocalDateString() }; App.render();" class="fixed bottom-6 right-6 w-16 h-16 bg-gradient-to-br from-indigo-500 to-purple-600 text-white rounded-full shadow-2xl hover:shadow-3xl transition-all z-50 flex items-center justify-center text-3xl">
+            +
+          </button>
+        `;
+      },
+      
+      formTemplate() {
+        return `
+          <div onclick="if(event.target === this) { App.state.showForm = false; App.render(); }" class="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-end z-50">
+            <div onclick="event.stopPropagation()" class="bg-white/95 backdrop-blur-2xl w-full rounded-t-3xl p-6 max-h-[85vh] overflow-y-auto border-t border-white/60 shadow-2xl">
+              <div class="flex items-center justify-between mb-6">
+                <h2 class="text-xl font-semibold text-gray-800">${this.state.editingTransaction ? '내역 수정' : '내역 추가'}</h2>
+                <button onclick="App.state.showForm = false; App.render();" class="text-gray-400 hover:text-gray-600 transition-colors w-8 h-8 flex items-center justify-center rounded-xl hover:bg-gray-100">
+                  <span class="text-2xl leading-none">×</span>
+                </button>
+              </div>
+              
+              <form onsubmit="App.handleSubmit(event)" class="space-y-5">
+                <div class="grid grid-cols-2 gap-3">
+                  <button type="button" onclick="App.state.formData.type = 'income'; App.state.formData.category = ''; App.render();" class="py-3.5 rounded-2xl font-semibold transition-all ${this.state.formData.type === 'income' ? 'bg-gradient-to-br from-green-500 to-emerald-600 text-white shadow-lg' : 'bg-gray-100/80 text-gray-600'}">
+                    수입
+                  </button>
+                  <button type="button" onclick="App.state.formData.type = 'expense'; App.state.formData.category = ''; App.render();" class="py-3.5 rounded-2xl font-semibold transition-all ${this.state.formData.type === 'expense' ? 'bg-gradient-to-br from-red-500 to-rose-600 text-white shadow-lg' : 'bg-gray-100/80 text-gray-600'}">
+                    지출
+                  </button>
+                </div>
+                
+                <div>
+                  <label class="block text-sm font-semibold text-gray-700 mb-2.5">금액</label>
+                  <input type="text" inputmode="numeric" value="${this.state.formData.amount}" oninput="App.handleAmountChange(this.value)" placeholder="금액을 입력하세요" class="w-full px-4 py-3.5 bg-white/80 border-2 border-gray-200/80 rounded-2xl focus:border-indigo-400 focus:outline-none" required>
+                </div>
+                
+                <div>
+                  <label class="block text-sm font-semibold text-gray-700 mb-2.5">카테고리</label>
+                  <div class="grid grid-cols-3 gap-2">
+                    ${this.state.categories[this.state.formData.type].map(cat => `
+                      <button type="button" onclick="App.state.formData.category = '${cat}'; App.render();" class="py-2.5 px-3 rounded-xl text-sm font-medium transition-all ${this.state.formData.category === cat ? 'bg-gradient-to-br from-indigo-500 to-purple-600 text-white shadow-md' : 'bg-gray-100/80 text-gray-600'}">
+                        ${cat}
+                      </button>
+                    `).join('')}
+                  </div>
+                </div>
+                
+                <div>
+                  <label class="block text-sm font-semibold text-gray-700 mb-2.5">날짜</label>
+                  <input type="date" value="${this.state.formData.date}" onchange="App.state.formData.date = this.value;" class="w-full px-4 py-3.5 bg-white/80 border-2 border-gray-200/80 rounded-2xl focus:border-indigo-400 focus:outline-none appearance-none" style="-webkit-appearance: none; -moz-appearance: none;" required>
+                </div>
+                
+                <div>
+                  <label class="block text-sm font-semibold text-gray-700 mb-2.5">메모 (선택)</label>
+                  <input type="text" value="${this.state.formData.description}" oninput="App.state.formData.description = this.value" placeholder="간단한 메모를 입력하세요" class="w-full px-4 py-3.5 bg-white/80 border-2 border-gray-200/80 rounded-2xl focus:border-indigo-400 focus:outline-none">
+                </div>
+                
+                <button type="submit" class="w-full py-4 bg-gradient-to-br from-indigo-500 to-purple-600 text-white font-semibold rounded-2xl shadow-lg hover:shadow-xl transition-all">
+                  ${this.state.editingTransaction ? '수정하기' : '추가하기'}
+                </button>
+              </form>
+            </div>
+          </div>
+        `;
+      },
+      
+      categoryManagerTemplate() {
+        return `
+          <div onclick="if(event.target === this) { App.state.showCategoryManager = false; App.render(); }" class="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-end z-50">
+            <div onclick="event.stopPropagation()" class="bg-white/95 backdrop-blur-2xl w-full rounded-t-3xl p-6 max-h-[85vh] overflow-y-auto border-t border-white/60 shadow-2xl">
+              <div class="flex items-center justify-between mb-6">
+                <h2 class="text-xl font-semibold text-gray-800">카테고리 관리</h2>
+                <button onclick="App.state.showCategoryManager = false; App.render();" class="text-gray-400 hover:text-gray-600 w-8 h-8 flex items-center justify-center rounded-xl hover:bg-gray-100">
+                  <span class="text-2xl">×</span>
+                </button>
+              </div>
+              
+              <div class="grid grid-cols-2 gap-3 mb-6">
+                <button onclick="App.state.categoryType = 'income'; App.render();" class="py-3.5 rounded-2xl font-semibold transition-all ${this.state.categoryType === 'income' ? 'bg-gradient-to-br from-green-500 to-emerald-600 text-white shadow-lg' : 'bg-gray-100/80 text-gray-600'}">
+                  수입 카테고리
+                </button>
+                <button onclick="App.state.categoryType = 'expense'; App.render();" class="py-3.5 rounded-2xl font-semibold transition-all ${this.state.categoryType === 'expense' ? 'bg-gradient-to-br from-red-500 to-rose-600 text-white shadow-lg' : 'bg-gray-100/80 text-gray-600'}">
+                  지출 카테고리
+                </button>
+              </div>
+              
+              <div class="space-y-3 mb-6">
+                ${this.state.categories[this.state.categoryType].map(cat => `
+                  <div class="flex items-center justify-between bg-gray-50 rounded-xl p-3">
+                    <span class="font-medium text-gray-800">${cat}</span>
+                    <button onclick="if(confirm('${cat} 카테고리를 삭제하시겠습니까?')) App.deleteCategory('${this.state.categoryType}', '${cat}')" class="text-red-500 hover:text-red-600 p-2">🗑️</button>
+                  </div>
+                `).join('')}
+              </div>
+              
+              <div class="flex gap-2">
+                <input type="text" value="${this.state.newCategory}" oninput="App.state.newCategory = this.value" onkeypress="if(event.key === 'Enter') { event.preventDefault(); App.addCategory(); }" placeholder="새 카테고리 이름" class="flex-1 px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-indigo-400 focus:outline-none">
+                <button onclick="App.addCategory()" class="px-6 py-3 bg-indigo-500 text-white font-semibold rounded-xl hover:bg-indigo-600 transition-all">추가</button>
+              </div>
+            </div>
+          </div>
+        `;
+      },
+      
+      dateDetailTemplate() {
+        const date = this.state.selectedDate;
+        const dayTx = this.getTransactionsForDate(date).sort((a, b) => b.id - a.id);
+        const dayIncome = dayTx.filter(t => t.type === 'income').reduce((sum, t) => sum + t.amount, 0);
+        const dayExpense = dayTx.filter(t => t.type === 'expense').reduce((sum, t) => sum + t.amount, 0);
+        
+        return `
+          <div onclick="if(event.target === this) { App.state.selectedDate = null; App.render(); }" class="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-end z-[90] p-4">
+            <div onclick="event.stopPropagation()" class="bg-white/95 backdrop-blur-2xl rounded-3xl p-6 max-w-sm w-full mx-auto border border-white/60 shadow-2xl max-h-[70vh] overflow-y-auto">
+              <div class="flex items-center justify-between mb-4">
+                <h3 class="text-lg font-semibold text-gray-800">
+                  ${date.getMonth() + 1}월 ${date.getDate()}일
+                </h3>
+                <button onclick="App.state.selectedDate = null; App.render();" class="text-gray-400 hover:text-gray-600 w-8 h-8 flex items-center justify-center rounded-xl hover:bg-gray-100">
+                  <span class="text-2xl">×</span>
+                </button>
+              </div>
+              
+              <div class="grid grid-cols-2 gap-3 mb-4">
+                <div class="bg-green-50 rounded-xl p-3">
+                  <div class="text-xs text-green-600 mb-1">수입</div>
+                  <div class="text-lg font-semibold text-green-600">+${this.formatCurrency(dayIncome)}</div>
+                </div>
+                <div class="bg-red-50 rounded-xl p-3">
+                  <div class="text-xs text-red-600 mb-1">지출</div>
+                  <div class="text-lg font-semibold text-red-600">-${this.formatCurrency(dayExpense)}</div>
+                </div>
+              </div>
+              
+              ${dayTx.length > 0 ? `
+                <div class="space-y-2">
+                  ${dayTx.map(t => `
+                    <div class="bg-gray-50 rounded-xl p-3">
+                      <div class="flex items-center justify-between mb-2">
+                        <div class="flex items-center gap-3 flex-1">
+                          <div class="w-8 h-8 rounded-lg flex items-center justify-center ${t.type === 'income' ? 'bg-green-100 text-green-600' : 'bg-red-100 text-red-600'}">
+                            ${t.type === 'income' ? '📈' : '📉'}
+                          </div>
+                          <div class="flex-1 min-w-0">
+                            <div class="font-medium text-gray-800 text-sm">${t.category}</div>
+                            ${t.description ? `<p class="text-xs text-gray-500 truncate">${t.description}</p>` : ''}
+                          </div>
+                        </div>
+                        <div class="font-semibold text-sm ${t.type === 'income' ? 'text-green-600' : 'text-red-600'}">
+                          ${t.type === 'income' ? '+' : '-'}${this.formatCurrency(t.amount)}
+                        </div>
+                      </div>
+                      <div class="flex gap-2">
+                        <button onclick="App.startEdit(${JSON.stringify(t).replace(/"/g, '&quot;')})" class="flex-1 py-2 bg-indigo-500 text-white text-sm font-medium rounded-lg hover:bg-indigo-600 transition-all">
+                          ✏️ 수정
+                        </button>
+                        <button onclick="App.deleteTransaction(${t.id})" class="flex-1 py-2 bg-red-500 text-white text-sm font-medium rounded-lg hover:bg-red-600 transition-all">
+                          🗑️ 삭제
+                        </button>
+                      </div>
+                    </div>
+                  `).join('')}
+                </div>
+              ` : `
+                <div class="text-center py-8 text-gray-400">
+                  <p class="text-sm">이 날짜에 내역이 없습니다</p>
+                </div>
+              `}
+            </div>
+          </div>
+        `;
+      },
+      
+      goalInputTemplate() {
+        return `
+          <div onclick="if(event.target === this) App.cancelGoalInput();" class="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-[100] p-4">
+            <div onclick="event.stopPropagation()" class="bg-white/95 backdrop-blur-2xl rounded-3xl p-6 max-w-sm w-full border border-white/60 shadow-2xl">
+              <h3 class="text-xl font-semibold text-gray-800 mb-4">🎯 이달 목표 설정</h3>
+              
+              <div class="mb-6">
+                <label class="block text-sm font-semibold text-gray-700 mb-2.5">목표 금액 (원)</label>
+                <input 
+                  id="goalInput"
+                  type="text" 
+                  inputmode="numeric" 
+                  value="${this.state.goalInputValue}" 
+                  oninput="App.handleGoalInput(this.value)" 
+                  placeholder="목표 금액을 입력하세요" 
+                  class="w-full px-4 py-3.5 bg-white border-2 border-gray-200 rounded-2xl focus:border-indigo-400 focus:outline-none text-lg"
+                  autofocus
+                >
+                <p class="text-xs text-gray-500 mt-2">💡 0원 입력 시 목표가 제거됩니다</p>
+              </div>
+              
+              <div class="grid grid-cols-2 gap-3">
+                <button onclick="App.cancelGoalInput()" class="py-3.5 bg-gray-100 text-gray-700 font-semibold rounded-2xl hover:bg-gray-200 transition-all">
+                  취소
+                </button>
+                <button onclick="App.saveMonthlyGoal()" class="py-3.5 bg-gradient-to-br from-indigo-500 to-purple-600 text-white font-semibold rounded-2xl shadow-lg hover:shadow-xl transition-all">
+                  저장
+                </button>
+              </div>
+            </div>
+          </div>
+        `;
+      },
+      
+      toastTemplate() {
+        return `
+          <div class="fixed bottom-24 left-1/2 transform -translate-x-1/2 z-[110] toast-enter">
+            <div class="bg-gray-900/95 backdrop-blur-xl text-white px-6 py-3.5 rounded-2xl shadow-2xl border border-white/10">
+              <p class="text-sm font-medium whitespace-nowrap">${this.state.toastMessage}</p>
+            </div>
+          </div>
+        `;
+      }
+    };
+    
+    document.addEventListener('DOMContentLoaded', () => {
+      App.init();
+    });
   </script>
 </body>
 </html>
