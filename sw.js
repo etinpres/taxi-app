@@ -1,37 +1,43 @@
-const CACHE_NAME = 'expense-tracker-v1';
+const CACHE_NAME = 'taxi-app-v2';
 const urlsToCache = [
-  '/index.html',
-  '/manifest.json',
-  'https://unpkg.com/react@18/umd/react.production.min.js',
-  'https://unpkg.com/react-dom@18/umd/react-dom.production.min.js',
-  'https://unpkg.com/@babel/standalone/babel.min.js',
-  'https://cdn.tailwindcss.com',
-  'https://unpkg.com/lucide@latest'
+  './',
+  './index.html',
+  './manifest.json',
+  'https://cdn.tailwindcss.com'
 ];
 
 // 설치 이벤트
 self.addEventListener('install', event => {
+  console.log('[SW] Install');
   event.waitUntil(
     caches.open(CACHE_NAME)
       .then(cache => {
-        console.log('Opened cache');
+        console.log('[SW] Caching app shell');
         return cache.addAll(urlsToCache);
+      })
+      .then(() => {
+        console.log('[SW] Skip waiting');
+        return self.skipWaiting();
       })
   );
 });
 
 // 활성화 이벤트
 self.addEventListener('activate', event => {
+  console.log('[SW] Activate');
   event.waitUntil(
     caches.keys().then(cacheNames => {
       return Promise.all(
         cacheNames.map(cacheName => {
           if (cacheName !== CACHE_NAME) {
-            console.log('Deleting old cache:', cacheName);
+            console.log('[SW] Deleting old cache:', cacheName);
             return caches.delete(cacheName);
           }
         })
       );
+    }).then(() => {
+      console.log('[SW] Claiming clients');
+      return self.clients.claim();
     })
   );
 });
@@ -41,29 +47,41 @@ self.addEventListener('fetch', event => {
   event.respondWith(
     caches.match(event.request)
       .then(response => {
-        // 캐시에 있으면 캐시된 응답 반환
         if (response) {
+          console.log('[SW] Cache hit:', event.request.url);
           return response;
         }
         
-        // 캐시에 없으면 네트워크 요청
+        console.log('[SW] Fetching:', event.request.url);
         return fetch(event.request).then(
           response => {
-            // 유효한 응답이 아니면 그냥 반환
-            if (!response || response.status !== 200 || response.type !== 'basic') {
+            // 유효하지 않은 응답은 캐시하지 않음
+            if (!response || response.status !== 200) {
               return response;
             }
 
-            // 응답을 복제하여 캐시에 저장
+            // HTML, CSS, JS, 이미지만 캐싱
             const responseToCache = response.clone();
-            caches.open(CACHE_NAME)
-              .then(cache => {
-                cache.put(event.request, responseToCache);
-              });
+            const url = event.request.url;
+            
+            if (url.includes('.html') || 
+                url.includes('.js') || 
+                url.includes('.css') || 
+                url.includes('.json') ||
+                url.includes('tailwindcss')) {
+              caches.open(CACHE_NAME)
+                .then(cache => {
+                  cache.put(event.request, responseToCache);
+                });
+            }
 
             return response;
           }
-        );
+        ).catch(error => {
+          console.log('[SW] Fetch failed:', error);
+          // 오프라인일 때 캐시된 index.html 반환
+          return caches.match('./index.html');
+        });
       })
   );
 });
