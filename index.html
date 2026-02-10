@@ -465,9 +465,24 @@
       registerServiceWorker() {
         if ('serviceWorker' in navigator) {
           window.addEventListener('load', () => {
-            navigator.serviceWorker.register('sw.js')
-              .then(reg => console.log('SW registered'))
-              .catch(err => console.log('SW failed'));
+            navigator.serviceWorker.register('./sw.js')
+              .then(reg => {
+                console.log('[App] SW registered');
+                // 강제 업데이트 확인
+                reg.update();
+                
+                // 새 버전 감지 시 자동 활성화
+                reg.addEventListener('updatefound', () => {
+                  const newWorker = reg.installing;
+                  newWorker.addEventListener('statechange', () => {
+                    if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+                      console.log('[App] New SW available, reloading...');
+                      window.location.reload();
+                    }
+                  });
+                });
+              })
+              .catch(err => console.log('[App] SW registration failed:', err));
           });
         }
       },

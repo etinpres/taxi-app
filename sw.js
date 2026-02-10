@@ -1,4 +1,4 @@
-const CACHE_NAME = 'taxi-app-v2';
+const CACHE_NAME = 'taxi-app-v3-20250210';
 const urlsToCache = [
   './',
   './index.html',
